@@ -1,0 +1,41 @@
+########################################
+# Atlas-08: Destroy Pipeline
+########################################
+trigger: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: atlas-08-vars
+  - name: serviceConnection
+    value: 'MI-ADO-API'
+  - name: terraformVersion
+    value: '1.9.8'
+
+stages:
+  - stage: Destroy
+    displayName: 'Destroy Infrastructure'
+    jobs:
+      - deployment: destroy
+        displayName: 'Terraform Destroy'
+        environment: 'atlas-08-destroy'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: TerraformInstaller@1
+                  displayName: 'Install Terraform'
+                  inputs:
+                    terraformVersion: $(terraformVersion)
+
+                - task: AzureCLI@2
+                  displayName: 'Run destroy.sh'
+                  inputs:
+                    azureSubscription: $(serviceConnection)
+                    scriptType: bash
+                    addSpnToEnvironment: true
+                    scriptLocation: scriptPath
+                    scriptPath: '$(Build.SourcesDirectory)/scripts/destroy.sh'

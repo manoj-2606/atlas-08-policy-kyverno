@@ -1,0 +1,275 @@
+########################################
+# Atlas-08: Policy Enforcement with Kyverno
+# Deploy Pipeline — 8 Stages
+########################################
+trigger: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: atlas-08-vars
+  - name: serviceConnection
+    value: 'MI-ADO-API'
+  - name: terraformVersion
+    value: '1.9.8'
+  - name: kyvernoChartVersion
+    value: '3.6.4'
+
+resources:
+  repositories:
+    - repository: app
+      type: git
+      name: Atlas-Platform/atlas-platform-app
+      ref: main
+
+stages:
+  # ===== Stage 1: Bootstrap =====
+  - stage: Bootstrap
+    displayName: 'Bootstrap Backend'
+    jobs:
+      - job: bootstrap
+        displayName: 'Create TF Backend'
+        steps:
+          - task: AzureCLI@2
+            displayName: 'Ensure storage account'
+            inputs:
+              azureSubscription: $(serviceConnection)
+              scriptType: bash
+              addSpnToEnvironment: true
+              scriptLocation: inlineScript
+              inlineScript: |
+                az group create \
+                  --name rg-atlas-tfstate \
+                  --location centralindia \
+                  --tags project=atlas-tfstate managed-by=azure-devops
+
+                az storage account create \
+                  --name atlastfstate2606 \
+                  --resource-group rg-atlas-tfstate \
+                  --location centralindia \
+                  --sku Standard_LRS \
+                  --kind StorageV2 \
+                  --allow-blob-public-access false
+
+                az storage container create \
+                  --name tfstate \
+                  --account-name atlastfstate2606 \
+                  --auth-mode login
+
+  # ===== Stage 2: Infrastructure =====
+  - stage: Infrastructure
+    displayName: 'Provision Infrastructure'
+    dependsOn: Bootstrap
+    jobs:
+      - deployment: infra
+        displayName: 'Terraform Apply'
+        environment: 'atlas-08-deploy'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: TerraformInstaller@1
+                  displayName: 'Install Terraform'
+                  inputs:
+                    terraformVersion: $(terraformVersion)
+
+                - task: AzureCLI@2
+                  name: infra
+                  displayName: 'Run infra.sh'
+                  inputs:
+                    azureSubscription: $(serviceConnection)
+                    scriptType: bash
+                    addSpnToEnvironment: true
+                    scriptLocation: scriptPath
+                    scriptPath: '$(Build.SourcesDirectory)/scripts/infra.sh'
+
+  # ===== Stage 3a: Build (parallel) =====
+  - stage: Build
+    displayName: 'Build & Push Image'
+    dependsOn: Infrastructure
+    jobs:
+      - job: build
+        displayName: 'Docker Build + Trivy'
+        variables:
+          RG_NAME: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.RG_NAME']]
+          ACR_SERVER: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.ACR_SERVER']]
+          ACR_NAME: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.ACR_NAME']]
+        steps:
+          - checkout: self
+          - checkout: app
+
+          - task: AzureCLI@2
+            displayName: 'Run build.sh'
+            inputs:
+              azureSubscription: $(serviceConnection)
+              scriptType: bash
+              addSpnToEnvironment: true
+              scriptLocation: scriptPath
+              scriptPath: '$(Build.SourcesDirectory)/atlas-08-policy-kyverno/scripts/build.sh'
+              arguments: '$(ACR_SERVER) $(ACR_NAME) $(RG_NAME) $(Build.BuildId)'
+
+  # ===== Stage 3b: Install Kyverno (parallel with Build) =====
+  - stage: InstallKyverno
+    displayName: 'Install Kyverno'
+    dependsOn: Infrastructure
+    jobs:
+      - job: kyverno
+        displayName: 'Helm Install Kyverno'
+        variables:
+          RG_NAME: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.RG_NAME']]
+          AKS_NAME: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.AKS_NAME']]
+        steps:
+          - checkout: self
+
+          - task: AzureCLI@2
+            displayName: 'Run install-kyverno.sh'
+            inputs:
+              azureSubscription: $(serviceConnection)
+              scriptType: bash
+              addSpnToEnvironment: true
+              scriptLocation: scriptPath
+              scriptPath: '$(Build.SourcesDirectory)/scripts/install-kyverno.sh'
+              arguments: '$(AKS_NAME) $(RG_NAME) $(kyvernoChartVersion)'
+
+  # ===== Stage 4: Apply Policies =====
+  - stage: ApplyPolicies
+    displayName: 'Apply Kyverno Policies'
+    dependsOn:
+      - Infrastructure
+      - InstallKyverno
+    jobs:
+      - job: policies
+        displayName: 'kubectl apply policies'
+        variables:
+          RG_NAME: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.RG_NAME']]
+          AKS_NAME: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.AKS_NAME']]
+        steps:
+          - checkout: self
+
+          - task: AzureCLI@2
+            displayName: 'Run apply-policies.sh'
+            inputs:
+              azureSubscription: $(serviceConnection)
+              scriptType: bash
+              addSpnToEnvironment: true
+              scriptLocation: scriptPath
+              scriptPath: '$(Build.SourcesDirectory)/scripts/apply-policies.sh'
+              arguments: '$(AKS_NAME) $(RG_NAME)'
+
+  # ===== Stage 5: Deploy App =====
+  - stage: DeployApp
+    displayName: 'Deploy App via Helm'
+    dependsOn:
+      - Infrastructure
+      - Build
+      - ApplyPolicies
+    jobs:
+      - job: deploy
+        displayName: 'Helm upgrade app'
+        variables:
+          RG_NAME: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.RG_NAME']]
+          ACR_SERVER: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.ACR_SERVER']]
+          AKS_NAME: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.AKS_NAME']]
+        steps:
+          - checkout: self
+
+          - task: AzureCLI@2
+            displayName: 'Helm deploy'
+            inputs:
+              azureSubscription: $(serviceConnection)
+              scriptType: bash
+              addSpnToEnvironment: true
+              scriptLocation: inlineScript
+              inlineScript: |
+                az aks get-credentials \
+                  --resource-group "$(RG_NAME)" \
+                  --name "$(AKS_NAME)" \
+                  --overwrite-existing
+
+                helm upgrade --install atlas-platform ./charts/atlas-platform \
+                  --namespace atlas-08 \
+                  --create-namespace \
+                  --set image.repository="$(ACR_SERVER)/atlas-platform-app" \
+                  --set image.tag="$(Build.BuildId)" \
+                  --wait \
+                  --timeout 300s
+
+                echo "--- Verify deployment ---"
+                kubectl get pods -n atlas-08
+                kubectl get svc -n atlas-08
+
+  # ===== Stage 6: Test Policies =====
+  - stage: TestPolicies
+    displayName: 'Negative Testing'
+    dependsOn:
+      - Infrastructure
+      - ApplyPolicies
+      - DeployApp
+    jobs:
+      - job: test
+        displayName: 'Run policy tests'
+        variables:
+          RG_NAME: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.RG_NAME']]
+          AKS_NAME: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.AKS_NAME']]
+        steps:
+          - checkout: self
+
+          - task: AzureCLI@2
+            displayName: 'Run test-policies.sh'
+            inputs:
+              azureSubscription: $(serviceConnection)
+              scriptType: bash
+              addSpnToEnvironment: true
+              scriptLocation: scriptPath
+              scriptPath: '$(Build.SourcesDirectory)/scripts/test-policies.sh'
+              arguments: '$(AKS_NAME) $(RG_NAME)'
+
+  # ===== Stage 7: Verify =====
+  - stage: Verify
+    displayName: 'Final Verification'
+    dependsOn:
+      - Infrastructure
+      - TestPolicies
+    jobs:
+      - job: verify
+        displayName: 'Verify everything'
+        variables:
+          RG_NAME: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.RG_NAME']]
+          AKS_NAME: $[stageDependencies.Infrastructure.infra.outputs['infra.infra.AKS_NAME']]
+        steps:
+          - checkout: self
+
+          - task: AzureCLI@2
+            displayName: 'Final checks'
+            inputs:
+              azureSubscription: $(serviceConnection)
+              scriptType: bash
+              addSpnToEnvironment: true
+              scriptLocation: inlineScript
+              inlineScript: |
+                az aks get-credentials \
+                  --resource-group "$(RG_NAME)" \
+                  --name "$(AKS_NAME)" \
+                  --overwrite-existing
+
+                echo "=== Atlas-08: Final Verification ==="
+                echo ""
+                echo "--- Kyverno Pods ---"
+                kubectl get pods -n kyverno
+                echo ""
+                echo "--- ClusterPolicies ---"
+                kubectl get clusterpolicies
+                echo ""
+                echo "--- App Pods ---"
+                kubectl get pods -n atlas-08
+                echo ""
+                echo "--- App Service ---"
+                kubectl get svc -n atlas-08
+                echo ""
+                echo "--- Policy Reports ---"
+                kubectl get policyreport -A 2>/dev/null || echo "No policy reports found"
+                echo ""
+                echo "=== P8 Verification Complete ==="
