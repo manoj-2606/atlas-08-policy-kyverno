@@ -1,0 +1,44 @@
+########################################
+# Mutate: Add default resource limits
+# Excluded from dev namespace (so validate tests work)
+########################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: add-default-resources
+  annotations:
+    policies.kyverno.io/title: Add Default Resources
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/description: >-
+      Adds default CPU/memory requests and limits if not set.
+      Excluded from dev namespace so validate tests can
+      properly block pods without resource limits.
+spec:
+  rules:
+    - name: add-resources
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-node-lease
+                - kube-public
+                - kyverno
+                - dev
+      mutate:
+        patchStrategicMerge:
+          spec:
+            containers:
+              - (name): "*"
+                resources:
+                  requests:
+                    +(cpu): "100m"
+                    +(memory): "128Mi"
+                  limits:
+                    +(cpu): "250m"
+                    +(memory): "256Mi"

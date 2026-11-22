@@ -1,0 +1,38 @@
+########################################
+# Mutate: Add default labels
+# Excluded from dev namespace (so validate tests work)
+########################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: add-default-labels
+  annotations:
+    policies.kyverno.io/title: Add Default Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/description: >-
+      Adds team and cost-center labels if not present.
+      Excluded from dev namespace so validate tests can
+      properly block non-compliant pods.
+spec:
+  rules:
+    - name: add-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-node-lease
+                - kube-public
+                - kyverno
+                - dev
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              +(team): "platform"
+              +(cost-center): "atlas-learning"
