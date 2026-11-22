@@ -1,0 +1,29 @@
+########################################
+# BAD: Missing resource limits
+# Violates: require-resource-limits
+# Satisfies: labels, non-root, probes, specific tag
+########################################
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-no-limits
+  namespace: dev
+  labels:
+    app.kubernetes.io/name: "test-bad-limits"
+    app.kubernetes.io/managed-by: "kubectl"
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  containers:
+    - name: test
+      image: nginx:1.27
+      # NO resources.limits — will be blocked
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 80

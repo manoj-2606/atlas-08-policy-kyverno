@@ -1,0 +1,32 @@
+########################################
+# BAD: Uses latest tag
+# Violates: disallow-latest-tag
+# Satisfies: labels, non-root, probes, limits
+########################################
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-latest-tag
+  namespace: dev
+  labels:
+    app.kubernetes.io/name: "test-bad-tag"
+    app.kubernetes.io/managed-by: "kubectl"
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  containers:
+    - name: test
+      image: nginx:latest  # BLOCKED — latest tag
+      resources:
+        limits:
+          cpu: "250m"
+          memory: "256Mi"
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 80

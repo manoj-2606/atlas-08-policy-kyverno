@@ -1,0 +1,34 @@
+########################################
+# GOOD: Fully compliant pod
+# Satisfies ALL policies — should be admitted
+########################################
+apiVersion: v1
+kind: Pod
+metadata:
+  name: good-compliant
+  namespace: dev
+  labels:
+    app.kubernetes.io/name: "test-good"
+    app.kubernetes.io/managed-by: "kubectl"
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  containers:
+    - name: test
+      image: nginx:1.27
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "250m"
+          memory: "256Mi"
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 80

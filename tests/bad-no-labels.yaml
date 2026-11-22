@@ -1,0 +1,30 @@
+########################################
+# BAD: Missing required labels
+# Violates: require-labels
+# Satisfies: non-root, probes, limits, specific tag
+########################################
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-no-labels
+  namespace: dev
+  # NO app.kubernetes.io/name or managed-by labels
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  containers:
+    - name: test
+      image: nginx:1.27
+      resources:
+        limits:
+          cpu: "250m"
+          memory: "256Mi"
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 80

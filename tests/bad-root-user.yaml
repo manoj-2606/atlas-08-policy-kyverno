@@ -1,0 +1,30 @@
+########################################
+# BAD: Runs as root
+# Violates: require-non-root
+# Satisfies: labels, probes, limits, specific tag
+########################################
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-root-user
+  namespace: dev
+  labels:
+    app.kubernetes.io/name: "test-bad-root"
+    app.kubernetes.io/managed-by: "kubectl"
+spec:
+  # NO runAsNonRoot — will be blocked
+  containers:
+    - name: test
+      image: nginx:1.27
+      resources:
+        limits:
+          cpu: "250m"
+          memory: "256Mi"
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 80
