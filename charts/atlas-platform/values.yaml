@@ -1,0 +1,64 @@
+########################################
+# Helm Values — Atlas Platform (P8)
+# All values tuned for B2s nodes + Kyverno policy compliance
+########################################
+
+replicaCount: 1
+
+image:
+  repository: ""  # Set by pipeline: ACR_LOGIN_SERVER/atlas-platform-app
+  tag: ""         # Set by pipeline: BUILD_BUILDID
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+# Resource limits (required by require-resource-limits policy)
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "250m"
+    memory: "256Mi"
+
+# Security context (required by require-non-root policy)
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+
+# Probes (required by require-probes policy)
+# B2s-safe: generous timeouts
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 30
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+# Labels (required by require-labels policy)
+labels:
+  app.kubernetes.io/name: "atlas-platform"
+  app.kubernetes.io/managed-by: "helm"
+
+# Config
+config:
+  APP_NAME: "atlas-platform-app"
+  APP_VERSION: "1.0.0"
+  ENVIRONMENT: "dev"
+  PROJECT: "atlas-08-policy-kyverno"

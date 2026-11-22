@@ -1,0 +1,6 @@
+apiVersion: v2
+name: atlas-platform
+description: Atlas Platform App Helm Chart — P8 Policy Kyverno
+type: application
+version: 0.8.0
+appVersion: "1.0.0"
