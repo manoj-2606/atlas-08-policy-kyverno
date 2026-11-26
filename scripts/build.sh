@@ -44,6 +44,9 @@ echo "--- Docker build ---"
 cd "${APP_DIR}"
 docker build -t "${IMAGE_TAG}" .
 
+echo "--- Install Trivy ---"
+curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
 echo "--- Trivy scan ---"
 trivy image \
   --severity HIGH,CRITICAL \
