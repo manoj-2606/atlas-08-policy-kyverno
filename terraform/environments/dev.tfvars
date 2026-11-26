@@ -4,7 +4,7 @@
 
 environment            = "dev"
 location               = "centralindia"
-aks_kubernetes_version = "1.31.2"
+aks_kubernetes_version = "1.36.5"
 aks_node_count         = 1
 aks_node_size          = "Standard_B2s"
 os_disk_size_gb        = 30
