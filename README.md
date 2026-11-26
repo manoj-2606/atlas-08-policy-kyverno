@@ -536,9 +536,11 @@ If mutate runs on `dev`, then `bad-no-limits.yaml` (which has no resource limits
 
 | # | Stage | Error | Root Cause | Fix | Time Lost |
 |---|-------|-------|------------|-----|-----------|
-| 1 | | | | | |
-
-<!-- POST-EXECUTION: Fill in actual errors encountered during pipeline execution -->
+| 1 | Pipeline Parse | `Environment atlas-08-deploy could not be found` | Environment not created in ADO before first run | Created `atlas-08-deploy` environment in Project Settings → Environments with no approval gate | ~2 min |
+| 2 | Infrastructure | `K8sVersionNotSupported` — version 1.31.2 only available for Long-Term Support (LTS) | K8s 1.31.2 moved to LTS-only tier since previous projects. AKS requires LTS flag or a supported non-LTS version | Ran `az aks get-versions --location centralindia`, updated `dev.tfvars` to `1.36.5` (latest stable non-LTS) | ~5 min |
+| 3 | Build | `trivy: command not found` (exit code 127) | Trivy is not pre-installed on ADO `ubuntu-latest` hosted agents | Added `curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \| sh -s -- -b /usr/local/bin` to `build.sh` before the scan step | ~5 min |
+| 4 | InstallKyverno | `timed out waiting for the condition on pods/kyverno-migrate-resources-kglrt` | `kubectl wait --for=condition=Ready pods --all` fails on completed Job pods (status `Completed`, not `Ready`). The migration Job pod is expected to complete and exit, but `--all` includes it in the wait | Replaced `kubectl wait --for=condition=Ready pods --all` with `kubectl rollout status deployment -n kyverno --timeout=120s` — waits on Deployments only, ignores Job pods | ~8 min |
+| 5 | Pipeline Parse | Variables `$(serviceConnection)`, `$(terraformVersion)`, `$(kyvernoChartVersion)` undefined | Removed the entire `variables:` block when removing the unused `atlas-08-vars` variable group | Restored the `variables:` block with inline variable definitions, only removed the `- group: atlas-08-vars` line | ~2 min |
 
 ## Interview Summary
 
