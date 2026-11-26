@@ -8,7 +8,6 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  - group: atlas-08-vars
   - name: serviceConnection
     value: 'MI-ADO-API'
   - name: terraformVersion
