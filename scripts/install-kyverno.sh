@@ -48,6 +48,6 @@ helm upgrade --install kyverno kyverno/kyverno \
 
 echo "--- Verify Kyverno pods ---"
 kubectl get pods -n kyverno
-kubectl wait --for=condition=Ready pods --all -n kyverno --timeout=120s
+kubectl rollout status deployment -n kyverno --timeout=120s
 
 echo "=== Kyverno installed ==="
